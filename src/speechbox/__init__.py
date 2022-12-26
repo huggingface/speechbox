@@ -24,4 +24,4 @@
 
 __version__ = "0.0.1"
 
-from restore import Restorer
+from .restore import Restorer

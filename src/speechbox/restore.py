@@ -39,19 +39,19 @@ class Restorer:
         transcript: Union[str, List[str]],
     ):
         # whisper always starts as follows
-        lower_words = [f"Ġ{word}" for word in text.split()]
+        lower_words = [f"Ġ{word}" for word in transcript.split()]
         target_lower_words = [
             self.processor.tokenizer(word, add_special_tokens=False).input_ids
             for word in lower_words
         ]
 
-        upper_words = [f"Ġ{word.capitalize()}" for word in text.split()]
+        upper_words = [f"Ġ{word.capitalize()}" for word in transcript.split()]
         target_upper_words = [
             self.processor.tokenizer(word, add_special_tokens=False).input_ids
             for word in upper_words
         ]
 
-        all_upper_words = [f"Ġ{word.upper()}" for word in text.split()]
+        all_upper_words = [f"Ġ{word.upper()}" for word in transcript.split()]
         target_all_upper_words = [
             self.processor.tokenizer(word, add_special_tokens=False).input_ids
             for word in all_upper_words
