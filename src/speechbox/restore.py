@@ -5,7 +5,7 @@ from typing import List, Union, Optional
 import numpy as np
 import torch
 import tqdm
-from transformers import WhisperForConditionalGeneration, WhisperProcessor
+from transformers import WhisperForConditionalGeneration, WhisperProcessor, BeamSearchScorer
 
 
 class Restorer:
@@ -48,9 +48,19 @@ class Restorer:
         audio: Union[np.ndarray, List[np.ndarray]],
         transcript: Union[str, List[str]],
         sampling_rate: Optional[int] = None,
+        num_beams: int = 3,
     ):
         device = self.model.device
-        # there are three possibilities of how a fully orthographic version of `transcript` can 
+        batch_size = 1
+        vocab_size = self.model.config.vocab_size
+        max_length = 50
+
+        beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=device)
+        beam_scores[:, 1:] = -1e9
+        beam_scores = beam_scores.view((batch_size * num_beams,))
+        beam_scorer = BeamSearchScorer(batch_size=batch_size, num_beams=num_beams, length_penalty=0.0, device=device)
+
+        # there are three possibilities of how a fully orthographic version of `transcript` can
         # look like:
         # 1) All lower-cased, e.g. "hello"
         # 2) The first letter upper-cased, e.g. "Hello"
@@ -70,6 +80,7 @@ class Restorer:
 
         with torch.no_grad():
             encoder_hidden_states = self.model.model.encoder(input_features).last_hidden_state
+            encoder_hidden_states = encoder_hidden_states.repeat_interleave(num_beams, dim=0)
 
         # Define `decoder_start_ids` as initial `current_ids`; they are quite specific to whisper-{}.en checkpoints
         decoder_start_ids = [self.model.config.decoder_start_token_id]
@@ -78,51 +89,104 @@ class Restorer:
                 decoder_start_ids.append(token_id[-1])
 
         decoder_start_ids = torch.tensor(decoder_start_ids, dtype=torch.long, device=device)[None, :]
+        decoder_start_ids = decoder_start_ids.repeat_interleave(num_beams, dim=0)
         current_ids = decoder_start_ids.broadcast_to(encoder_hidden_states.shape[:1] + decoder_start_ids.shape[1:])
 
         # loop over words of possibilities 1), 2) and 3).
-        for i in range(len(lower_words)):
-            tokens_list = (lower_words[i], upper_words[i], all_upper_words[i])
-            tokens = (lower_words[i][0], upper_words[i][0], all_upper_words[i][0])
-
-            if i < len(lower_words) - 1:
-                next_tokens = (lower_words[i+1][0], upper_words[i+1][0], all_upper_words[i+1][0])
-            else:
-                next_tokens = None
+        while not is_finished:
+            import ipdb; ipdb.set_trace()
+#            cur_allow_tokens_list = (lower_words[i], upper_words[i], all_upper_words[i])
+#            cur_allow_tokens = (lower_words[i][0], upper_words[i][0], all_upper_words[i][0])
+#
+#            if i < len(lower_words) - 1:
+#                next_allow_tokens = (lower_words[i+1][0], upper_words[i+1][0], all_upper_words[i+1][0])
+#            else:
+#                next_allow_tokens = None
 
             # the first token of each word decides, whether the word is 1), 2) or 3)
             with torch.no_grad():
-                logits = self.model(decoder_input_ids=current_ids, encoder_outputs=encoder_hidden_states).logits[0, -1]
-                # correct token has to be in top 50
-                top_k_50 = logits.topk(50).indices
+                logits = self.model(decoder_input_ids=current_ids, encoder_outputs=encoder_hidden_states).logits[:, -1]
+                scores = torch.nn.functional.log_softmax(logits, dim=-1)
 
-            ranks = self.get_ranks(top_k_50, tokens)
-            tokens_idx = ranks.index(min(ranks))
-            tokens = torch.tensor(tokens_list[tokens_idx], device=device)
+            # TODO(Patrick) process scores here!
 
-            # append complete word of 1), 2) or 3)
-            current_ids = torch.cat([current_ids, tokens[None]], dim=-1)
+            next_scores = scores + beam_scores[:, None].expand_as(scores)
+            next_scores = next_scores.view(batch_size, num_beams * vocab_size)
 
-            # Finally check for punctuation. For now, we assume that punctuation can only 
-            # occur *after* a word, but not in the middle of the word.
-            # Also punctuation can only always only take a single character.
-            with torch.no_grad():
-                logits = self.model(decoder_input_ids=current_ids, encoder_outputs=encoder_hidden_states).logits[0, -1]
-                # punctuation has to be in top 10
-                top_k_10 = logits.topk(10).indices
+            next_token_scores, next_tokens = torch.topk(
+                next_scores, 2 * num_beams, dim=1, largest=True, sorted=True
+            )
 
-            next_token_ranks = self.get_ranks(top_k_10, next_tokens) if next_tokens is not None else [float("inf")]
-            punc_ranks = self.get_ranks(top_k_10, self.punctuation)
+            next_indices = next_tokens // vocab_size
+            next_tokens = next_tokens % vocab_size
 
-            # punctuation is only added, if punctuation is more likely than next token **and** if 
-            # punctuation is in top_10
-            if not torch.tensor(punc_ranks, device=device).isinf().all() and min(punc_ranks) < min(next_token_ranks):
-                punc_idx = punc_ranks.index(min(punc_ranks))
-                punc = torch.tensor([self.punctuation[punc_idx]], device=device)
-                current_ids = torch.cat([current_ids, punc[None]], dim=-1)
+            # stateless
+            beam_outputs = beam_scorer.process(
+                current_ids,
+                next_token_scores,
+                next_tokens,
+                next_indices,
+                pad_token_id=self.model.config.pad_token_id,
+                eos_token_id=self.model.config.eos_token_id,
+                beam_indices=None,
+            )
+
+            beam_scores = beam_outputs["next_beam_scores"]
+            beam_next_tokens = beam_outputs["next_beam_tokens"]
+            beam_idx = beam_outputs["next_beam_indices"]
+
+            current_ids = torch.cat([current_ids[beam_idx, :], beam_next_tokens.unsqueeze(-1)], dim=-1)
+
+        sequence_outputs = beam_scorer.finalize(
+            current_ids,
+            beam_scores,
+            next_tokens,
+            next_indices,
+            pad_token_id=self.model.config.pad_token_id,
+            eos_token_id=self.model.config.eos_token_id,
+            max_length=max_length,
+            beam_indices=None,
+        )
 
         orthographic_transcription = self.tokenizer.batch_decode(current_ids, skip_special_tokens=True)[0]
         # skip first character as it's always an empty space
         orthographic_transcription = orthographic_transcription[1:]
 
+        print(orthographic_transcription)
+        import ipdb; ipdb.set_trace()
+
         return orthographic_transcription
+
+                # correct token has to be in top 50
+#                top_k_50 = logits.topk(50).indices
+#
+#            ranks = self.get_ranks(top_k_50, tokens)
+#            tokens_idx = ranks.index(min(ranks))
+#            tokens = torch.tensor(tokens_list[tokens_idx], device=device)
+#
+            # append complete word of 1), 2) or 3)
+#            current_ids = torch.cat([current_ids, tokens[None]], dim=-1)
+#
+            # Finally check for punctuation. For now, we assume that punctuation can only
+            # occur *after* a word, but not in the middle of the word.
+            # Also punctuation can only always only take a single character.
+#            with torch.no_grad():
+#                logits = self.model(decoder_input_ids=current_ids, encoder_outputs=encoder_hidden_states).logits[0, -1]
+                # punctuation has to be in top 10
+#                top_k_10 = logits.topk(10).indices
+#
+#            next_token_ranks = self.get_ranks(top_k_10, next_tokens) if next_tokens is not None else [float("inf")]
+#            punc_ranks = self.get_ranks(top_k_10, self.punctuation)
+#
+            # punctuation is only added, if punctuation is more likely than next token **and** if 
+            # punctuation is in top_10
+#            if not torch.tensor(punc_ranks, device=device).isinf().all() and min(punc_ranks) < min(next_token_ranks):
+#                punc_idx = punc_ranks.index(min(punc_ranks))
+#                punc = torch.tensor([self.punctuation[punc_idx]], device=device)
+#                current_ids = torch.cat([current_ids, punc[None]], dim=-1)
+#
+#        orthographic_transcription = self.tokenizer.batch_decode(current_ids, skip_special_tokens=True)[0]
+        # skip first character as it's always an empty space
+#        orthographic_transcription = orthographic_transcription[1:]
+#
+#        return orthographic_transcription
