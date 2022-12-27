@@ -43,6 +43,27 @@ class Restorer:
         ranks = [(top_k == i).nonzero() if i in top_k else float("inf") for i in ids]
         return ranks
 
+    def create_dicts(self, all_words: List[List[List[str]]]):
+        all_words_flat = []
+        max_length = 0
+        end_of_words = torch.zeros((len(all_words), len(all_words[0])), dtype=torch.long)
+
+        for i, words in enumerate(all_words):
+            flat_words = [item for sublist in words for item in sublist]
+            max_length = max(max_length, len(flat_words))
+            all_words_flat.append(flat_words)
+
+            end_of_words[i] = torch.tensor([len(w) for w in words], dtype=torch.long).cumsum(-1)
+
+        token_dict = torch.zeros((len(all_words), max_length), dtype=torch.long) - 1
+        for i, flat_words in enumerate(all_words_flat):
+            token_dict[i][:len(flat_words)] = torch.tensor(flat_words)
+
+        end_of_words = end_of_words.roll(1)
+        end_of_words[:, 0] = 0
+
+        return token_dict, end_of_words
+
     def __call__(
         self,
         audio: Union[np.ndarray, List[np.ndarray]],
@@ -54,6 +75,7 @@ class Restorer:
         batch_size = 1
         vocab_size = self.model.config.vocab_size
         max_length = 50
+        is_finished = False
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=device)
         beam_scores[:, 1:] = -1e9
@@ -63,16 +85,29 @@ class Restorer:
         # there are three possibilities of how a fully orthographic version of `transcript` can
         # look like:
         # 1) All lower-cased, e.g. "hello"
-        # 2) The first letter upper-cased, e.g. "Hello"
-        # 3) All upper-cased, e.g. "HELLO"
-        # Option 3) is less likely but can occur.
-        lower_words = self.convert_words([f" {word.lower()}" for word in transcript.split()])
-        upper_words = self.convert_words([f" {word.lower().capitalize()}" for word in transcript.split()])
-        all_upper_words = self.convert_words([f" {word.upper()}" for word in transcript.split()])
+        # 2) All upper-cased, e.g. "HELLO"
+        # Option 2) is a rare case
+        # 3) All lower-cased + space, e.g. " hello"
+        # 4) The first letter upper-cased + space, e.g. " Hello"
+        # 5) All upper-cased + space, e.g. " HELLO"
+        # Option 5) is a rare case
+        lower_words = self.convert_words([f"{word.lower()}" for word in transcript.split()])
+        upper_words = self.convert_words([f"{word.lower().capitalize()}" for word in transcript.split()])
+
+        _lower_words = self.convert_words([f" {word.lower()}" for word in transcript.split()])
+        _upper_words = self.convert_words([f" {word.lower().capitalize()}" for word in transcript.split()])
+        _all_upper_words = self.convert_words([f" {word.upper()}" for word in transcript.split()])
+
+        all_words = [lower_words, upper_words, _lower_words, _upper_words, _all_upper_words]
+
+        track_dict, track_ends = self.create_dicts(all_words)
+
+        num_gen_tokens = torch.zeros((5, num_beams), dtype=torch.long)
+        token_track = torch.zeros((num_beams,), dtype=torch.long)  # use -1 for no track between 1), ..., 5)
 
         # Quick quality check, lower-cased words have to be identical when decoding
-        flat_lower_words = [item for sublist in lower_words for item in sublist]
-        assert self.tokenizer.decode(flat_lower_words)[1:] == transcript, f"Decoding of {transcript} is wrong."
+        _flat_lower_words = [item for sublist in _lower_words for item in sublist]
+        assert self.tokenizer.decode(_flat_lower_words)[1:] == transcript, f"Decoding of {transcript} is wrong."
 
         # Get encoder hidden states
         input_features = self.processor(audio, sampling_rate=sampling_rate, return_tensors="pt")["input_features"]
@@ -91,24 +126,36 @@ class Restorer:
         decoder_start_ids = torch.tensor(decoder_start_ids, dtype=torch.long, device=device)[None, :]
         decoder_start_ids = decoder_start_ids.repeat_interleave(num_beams, dim=0)
         current_ids = decoder_start_ids.broadcast_to(encoder_hidden_states.shape[:1] + decoder_start_ids.shape[1:])
+        num_start_ids = decoder_start_ids.shape[-1]
+
+        word_idx = torch.zeros_like(token_track)
+        is_word_ended = torch.ones_like(token_track)
 
         # loop over words of possibilities 1), 2) and 3).
         while not is_finished:
-            import ipdb; ipdb.set_trace()
-#            cur_allow_tokens_list = (lower_words[i], upper_words[i], all_upper_words[i])
-#            cur_allow_tokens = (lower_words[i][0], upper_words[i][0], all_upper_words[i][0])
-#
-#            if i < len(lower_words) - 1:
-#                next_allow_tokens = (lower_words[i+1][0], upper_words[i+1][0], all_upper_words[i+1][0])
-#            else:
-#                next_allow_tokens = None
-
-            # the first token of each word decides, whether the word is 1), 2) or 3)
             with torch.no_grad():
                 logits = self.model(decoder_input_ids=current_ids, encoder_outputs=encoder_hidden_states).logits[:, -1]
                 scores = torch.nn.functional.log_softmax(logits, dim=-1)
 
+            num_puncs = torch.cat([current_ids == p for p in self.punctuation], dim=-1).sum(-1)
+            steps = current_ids.shape[-1] - num_start_ids - num_puncs.cpu()
+
             # TODO(Patrick) process scores here!
+            all_next_tokens = [None for _ in range(num_beams)]
+            for i, is_ended in enumerate(is_word_ended):
+                if is_ended:
+                    start_steps = track_ends[:, word_idx[i]]
+                    next_possible_tokens = torch.matmul(torch.nn.functional.one_hot(start_steps, track_dict.shape[-1]), track_dict.transpose(0, 1)).diagonal()
+                    all_next_tokens[i] = next_possible_tokens
+
+                    next_possible_tokens = torch.cat([torch.tensor(self.punctuation), next_possible_tokens], dim=-1)
+                else:
+                    next_possible_tokens = torch.tensor([track_dict[token_track[i], steps[i]]])
+                    all_next_tokens[i] = next_possible_tokens
+
+                next_possible_scores = scores[i][next_possible_tokens]
+                scores[i] = torch.zeros_like(scores[i]) - float("inf")
+                scores[i][next_possible_tokens] = next_possible_scores
 
             next_scores = scores + beam_scores[:, None].expand_as(scores)
             next_scores = next_scores.view(batch_size, num_beams * vocab_size)
@@ -137,6 +184,37 @@ class Restorer:
 
             current_ids = torch.cat([current_ids[beam_idx, :], beam_next_tokens.unsqueeze(-1)], dim=-1)
 
+            uses_punc = (torch.tensor(self.punctuation)[None, :].broadcast_to(num_beams, len(self.punctuation)) == beam_next_tokens.cpu()[:, None].broadcast_to(num_beams, len(self.punctuation))).any(-1)
+
+            old_token_track = token_track.clone()
+            for i, use_punc in enumerate(uses_punc):
+                idx = beam_idx[i]
+                if use_punc:
+                    # if uses punctuation, we stay in track
+                    token_track[i] = old_token_track[idx]
+                elif not is_word_ended[idx]:
+                    # if is in middle of the word, we stay in track
+                    token_track[i] = old_token_track[idx]
+                else:
+                    # if it's a new word, we have to find out which track was chosen
+                    token_track[i] = (all_next_tokens[idx] == beam_next_tokens[i].cpu()).nonzero().item()
+
+            old_word_idx = word_idx.clone()
+            for i, ids in enumerate(current_ids[:, num_start_ids:]):
+                idx = beam_idx[i]
+                potential_word = all_words[token_track[i]][old_word_idx[i]]
+                if ids.shape[0] >= len(potential_word) and ids.cpu()[-len(potential_word):].tolist() == potential_word:
+                    word_idx[i] = old_word_idx[idx] + 1
+                    is_word_ended[i] = 1
+                elif uses_punc[i]:
+                    word_idx[i] = old_word_idx[idx]
+                    is_word_ended[i] = 1
+                else:
+                    word_idx[i] = old_word_idx[idx]
+                    is_word_ended[i] = 0
+
+            print("Out:", self.tokenizer.batch_decode(current_ids))
+
         sequence_outputs = beam_scorer.finalize(
             current_ids,
             beam_scores,
@@ -153,7 +231,6 @@ class Restorer:
         orthographic_transcription = orthographic_transcription[1:]
 
         print(orthographic_transcription)
-        import ipdb; ipdb.set_trace()
 
         return orthographic_transcription
 
