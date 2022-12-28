@@ -276,7 +276,6 @@ class PunctuationRestorer:
             final_sequences = current_ids.cpu()
             final_probs = beam_scores.cpu().item()
 
-        
         # 10. Decode generated tokens
         orthographic_transcription = self.tokenizer.batch_decode(final_sequences, skip_special_tokens=True)[0]
         # skip first character as it's always an empty space

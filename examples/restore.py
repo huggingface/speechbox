@@ -7,8 +7,8 @@ from huggingface_hub import CommitOperationAdd, HfApi, create_repo, login
 from speechbox import PunctuationRestorer
 
 # model to use for restoration
-MODEL_ID = "openai/whisper-medium.en"
-NUM_BEAMS = 1
+MODEL_ID = "openai/whisper-tiny.en"
+NUM_BEAMS = 4
 
 REPO_ID = f"patrickvonplaten/restore_punctuation_{MODEL_ID.split('-')[-1].split('.')[0]}_num_beams_{NUM_BEAMS}"
 LOCAL_FILE = os.path.join("/home/patrick_huggingface_co/transcripts.csv")
