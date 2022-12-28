@@ -23,6 +23,7 @@ We ❤️  contributions from the open-source community!
 If you want to contribute to this library, please check out our [Contribution guide](https://github.com/huggingface/speechbox/blob/main/CONTRIBUTING.md).
 You can look out for [issues](https://github.com/huggingface/speechbox/issues) you'd like to tackle to contribute to the library.
 - See [Good first issues](https://github.com/huggingface/speechbox/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22) for general opportunities to contribute
+- See [New Task](https://github.com/huggingface/speechbox/labels/New%20Task) for more advanced contributions. Make sure to have read the [Philosophy guide](https://github.com/huggingface/speechbox/blob/main/CONTRIBUTING.md#philosophy) to succesfully add a new task.
 
 Also, say 👋 in our public Discord channel <a href="https://discord.gg/G7tWnz98XR"><img alt="Join us on Discord" src="https://img.shields.io/discord/823813159592001537?color=5865F2&logo=discord&logoColor=white"></a> under **ML for Audio and Speech**. We discuss the new trends about machine learning methods for speech, help each other with contributions, personal projects or
 just hang out ☕.
@@ -48,7 +49,8 @@ Punctuation is simply defined as the offial Python [string.Punctuation](https://
 and **only** on some 80 audio samples of [patrickvonplaten/librispeech_asr_dummy](https://huggingface.co/datasets/patrickvonplaten/librispeech_asr_dummy).
 
 ### Web Demo
-If you just want to play around with some web demos, you can try out the following 🚀 Spaces:
+
+If you want to try out the punctuation restoration, you can try out the following 🚀 Spaces:
 
 [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/speechbox/whisper-restore-punctuation)
 
