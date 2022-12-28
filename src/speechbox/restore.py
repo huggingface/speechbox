@@ -43,45 +43,26 @@ class Restorer:
         ranks = [(top_k == i).nonzero() if i in top_k else float("inf") for i in ids]
         return ranks
 
-    def create_dicts(self, all_words: List[List[List[str]]]):
-        all_words_flat = []
-        max_length = 0
-        end_of_words = torch.zeros((len(all_words), len(all_words[0])), dtype=torch.long)
-
-        for i, words in enumerate(all_words):
-            flat_words = [item for sublist in words for item in sublist]
-            max_length = max(max_length, len(flat_words))
-            all_words_flat.append(flat_words)
-
-            end_of_words[i] = torch.tensor([len(w) for w in words], dtype=torch.long).cumsum(-1)
-
-        token_dict = torch.zeros((len(all_words), max_length), dtype=torch.long) - 1
-        for i, flat_words in enumerate(all_words_flat):
-            token_dict[i][:len(flat_words)] = torch.tensor(flat_words)
-
-        end_of_words = end_of_words.roll(1)
-        end_of_words[:, 0] = 0
-
-        return token_dict, end_of_words
-
     def __call__(
         self,
         audio: Union[np.ndarray, List[np.ndarray]],
         transcript: Union[str, List[str]],
         sampling_rate: Optional[int] = None,
-        num_beams: int = 3,
+        num_beams: int = 1,
     ):
         device = self.model.device
         batch_size = 1
         vocab_size = self.model.config.vocab_size
-        max_length = 50
         num_words = len(transcript.split())
-        can_prev_all_finished = False
 
-        beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=device)
-        beam_scores[:, 1:] = -1e9
-        beam_scores = beam_scores.view((batch_size * num_beams,))
-        beam_scorer = BeamSearchScorer(batch_size=batch_size, num_beams=num_beams, length_penalty=0.0, device=device)
+        if num_beams > 1:
+            beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=device)
+            beam_scores[:, 1:] = -1e9
+            beam_scores = beam_scores.view((batch_size * num_beams,))
+            beam_scorer = BeamSearchScorer(batch_size=batch_size, num_beams=num_beams, length_penalty=0.0, device=device)
+        else:
+            beam_scores = torch.zeros((batch_size,), dtype=torch.float, device=device)
+            beam_scorer = None
 
         # there are three possibilities of how a fully orthographic version of `transcript` can
         # look like:
@@ -99,15 +80,12 @@ class Restorer:
         _upper_words = self.convert_words([f" {word.lower().capitalize()}" for word in transcript.split()])
         _all_upper_words = self.convert_words([f" {word.upper()}" for word in transcript.split()])
 
-        all_words = [lower_words, upper_words, _lower_words, _upper_words, _all_upper_words]
-
-        track_dict, track_ends = self.create_dicts(all_words)
-
-        token_track = torch.zeros((num_beams,), dtype=torch.long)  # use -1 for no track between 1), ..., 5)
-
         # Quick quality check, lower-cased words have to be identical when decoding
         _flat_lower_words = [item for sublist in _lower_words for item in sublist]
         assert self.tokenizer.decode(_flat_lower_words)[1:] == transcript, f"Decoding of {transcript} is wrong."
+
+        # put all possible words in a "all_words" list
+        all_words = [lower_words, upper_words, _lower_words, _upper_words, _all_upper_words]
 
         # Get encoder hidden states
         input_features = self.processor(audio, sampling_rate=sampling_rate, return_tensors="pt")["input_features"]
@@ -128,12 +106,12 @@ class Restorer:
         current_ids = decoder_start_ids.broadcast_to(encoder_hidden_states.shape[:1] + decoder_start_ids.shape[1:])
         num_start_ids = decoder_start_ids.shape[-1]
 
-        word_idx = torch.zeros_like(token_track)
-        is_word_ended = torch.ones_like(token_track)
-        can_finish = torch.zeros_like(token_track)
-        steps = torch.zeros_like(token_track)
-        num_steps_last_finished = torch.zeros_like(token_track)
-        uses_punc = torch.zeros_like(token_track)
+        # create running variables
+        token_track = [[0] for _ in range(num_beams)]
+        word_idx = torch.zeros((num_beams,), dtype=torch.long)
+        is_word_ended = torch.ones_like(word_idx)
+        in_word_index = torch.zeros_like(word_idx)
+        uses_punc = torch.zeros_like(word_idx)
 
         # loop over words of possibilities 1), 2) and 3).
         while True:
@@ -143,24 +121,39 @@ class Restorer:
 
             all_next_tokens = [None for _ in range(num_beams)]
             for i, is_ended in enumerate(is_word_ended):
-                if can_finish[i]:
+                can_finish = word_idx[i] >= num_words
+
+                if can_finish and not uses_punc[i]:
+                    # if word is completed, we allow it to be finished or add punctuation and then finish
                     next_possible_tokens = torch.tensor(self.punctuation + [self.model.config.eos_token_id])
+                elif can_finish:
+                    # if word is completed and it has already seen punctuation, we force it to be finished
+                    next_possible_tokens = torch.tensor([self.model.config.eos_token_id])
                 elif is_ended:
-                    start_steps = track_ends[:, word_idx[i]]
-                    next_possible_tokens = torch.matmul(torch.nn.functional.one_hot(start_steps, track_dict.shape[-1]), track_dict.transpose(0, 1)).diagonal()
+                    # if a word has ended, all next words can be begin of new word
+                    next_possible_tokens = torch.tensor([w[word_idx[i]][0] for w in all_words])
                     all_next_tokens[i] = next_possible_tokens
 
+                    # if previously punctuation wasn't used, it can be used now
                     if not uses_punc[i]:
                         next_possible_tokens = torch.cat([torch.tensor(self.punctuation), next_possible_tokens], dim=-1)
                 else:
-                    tokens_in_word = all_words[token_track[i]][word_idx[i]]
-                    next_possible_tokens = torch.tensor([tokens_in_word[steps[i] - num_steps_last_finished[i]]])
+                    # here we are in the scenario that we're inside one or more words already. Then we simply need to continue this word
+                    in_word_step = in_word_index[i]
+                    next_possible_tokens = []
+                    for track in token_track[i]:
+                        tokens_in_word = all_words[track][word_idx[i]]
+                        next_possible_tokens.append(tokens_in_word[in_word_step])
+
+                    next_possible_tokens = torch.tensor(next_possible_tokens, dtype=torch.long)
                     all_next_tokens[i] = next_possible_tokens
 
+                # allow only next possible tokens to be generated
                 next_possible_scores = scores[i][next_possible_tokens].clone()
                 scores[i] = torch.zeros_like(scores[i]) - float("inf")
                 scores[i][next_possible_tokens] = next_possible_scores
 
+            # Run beam search
             next_scores = scores + beam_scores[:, None].expand_as(scores)
             next_scores = next_scores.view(batch_size, num_beams * vocab_size)
 
@@ -172,86 +165,101 @@ class Restorer:
             next_tokens = next_tokens % vocab_size
 
             # stateless
-            beam_outputs = beam_scorer.process(
-                current_ids,
-                next_token_scores,
-                next_tokens,
-                next_indices,
-                pad_token_id=self.model.config.pad_token_id,
-                eos_token_id=self.model.config.eos_token_id,
-                beam_indices=None,
-            )
-
-            beam_scores = beam_outputs["next_beam_scores"]
-            beam_next_tokens = beam_outputs["next_beam_tokens"]
-            beam_idx = beam_outputs["next_beam_indices"]
+            if beam_scorer is not None:
+                beam_outputs = beam_scorer.process(
+                    current_ids,
+                    next_token_scores,
+                    next_tokens,
+                    next_indices,
+                    pad_token_id=self.model.config.pad_token_id,
+                    eos_token_id=self.model.config.eos_token_id,
+                    beam_indices=None,
+                )
+                beam_scores = beam_outputs["next_beam_scores"]
+                beam_next_tokens = beam_outputs["next_beam_tokens"]
+                beam_idx = beam_outputs["next_beam_indices"]
+            else:
+                beam_scores = next_token_scores[0, :1]
+                beam_next_tokens = next_tokens[0, :1]
+                beam_idx = next_indices[0, :1]
 
             current_ids = torch.cat([current_ids[beam_idx, :], beam_next_tokens.unsqueeze(-1)], dim=-1)
 
+            # if we do greedy search we can already finish here
+            if num_beams == 1 and current_ids[0, -1].item() == self.model.config.eos_token_id:
+                break
+
             uses_punc = (torch.tensor(self.punctuation)[None, :].broadcast_to(num_beams, len(self.punctuation)) == beam_next_tokens.cpu()[:, None].broadcast_to(num_beams, len(self.punctuation))).any(-1)
 
-            old_token_track = token_track.clone()
+            # Retrive which token track was chosen
+            old_token_track = token_track.copy()
             for i, use_punc in enumerate(uses_punc):
                 idx = beam_idx[i]
                 if use_punc:
                     # if uses punctuation, we stay in track
                     token_track[i] = old_token_track[idx]
                 elif not is_word_ended[idx]:
-                    # if is in middle of the word, we stay in track
-                    token_track[i] = old_token_track[idx]
+                    if len(old_token_track[idx]) > 1:
+                        selected_index = (all_next_tokens[idx] == beam_next_tokens[i].cpu()).nonzero().flatten().item()
+                    else:
+                        selected_index = 0
+
+                    token_track[i] = [old_token_track[idx][selected_index]]
                 else:
-                    # if it's a new word, we have to find out which track was chosen
-                    token_track[i] = (all_next_tokens[idx] == beam_next_tokens[i].cpu()).nonzero().item()
+                    # if it's a new word, we have to find out which track(s) was chosen
+                    token_track[i] = (all_next_tokens[idx] == beam_next_tokens[i].cpu()).nonzero().flatten().tolist()
 
-            num_puncs = torch.cat([current_ids == p for p in self.punctuation], dim=-1).sum(-1)
-            steps = current_ids.shape[-1] - num_start_ids - num_puncs.cpu()
-
+            # retrieve whether word has ended and where in word we are
             old_word_idx = word_idx.clone()
-            old_num_steps_last_finished = num_steps_last_finished.clone()
+            old_is_word_index = in_word_index.clone()
             for i, ids in enumerate(current_ids[:, num_start_ids:]):
-                if can_finish[i]:
+                # Don't bother if word is already finished
+                if old_word_idx[idx] >= num_words:
+                    word_idx[i] = old_word_idx[idx]
                     continue
 
                 idx = beam_idx[i]
-                potential_word = all_words[token_track[i]][old_word_idx[idx]] if old_word_idx[idx] < num_words else None
-                if potential_word is not None and ids.shape[0] >= len(potential_word) and ids.cpu()[-len(potential_word):].tolist() == potential_word:
+
+                potential_word = all_words[token_track[i][0]][old_word_idx[idx]]
+                has_ended = ids.shape[0] >= len(potential_word) and ids.cpu()[-len(potential_word):].tolist() == potential_word
+
+                if has_ended:
                     word_idx[i] = old_word_idx[idx] + 1
                     is_word_ended[i] = 1
-                    num_steps_last_finished[i] = steps[i]
+                    in_word_index[i] = 0
                 elif uses_punc[i]:
                     word_idx[i] = old_word_idx[idx]
-                    num_steps_last_finished[i] = old_num_steps_last_finished[idx]
                     is_word_ended[i] = 1
+                    in_word_index[i] = 0
                 else:
                     word_idx[i] = old_word_idx[idx]
-                    num_steps_last_finished[i] = old_num_steps_last_finished[idx]
                     is_word_ended[i] = 0
+                    in_word_index[i] = old_is_word_index[idx] + 1
 
-            can_finish = word_idx >= num_words
-            num_finished_beams = len(beam_scorer._beam_hyps[0])
-
-            if num_finished_beams >= num_beams or can_prev_all_finished:
+            # if we do beam search we only finish if all beams have been run
+            if num_beams > 1 and len(beam_scorer._beam_hyps[0]) >= num_beams:
                 break
 
-            can_prev_all_finished = can_finish.all()
+        if beam_scorer is not None:
+            # max-lenth doesn't matter here
+            sequence_outputs = beam_scorer.finalize(
+                current_ids,
+                beam_scores,
+                next_tokens,
+                next_indices,
+                pad_token_id=self.model.config.pad_token_id,
+                eos_token_id=self.model.config.eos_token_id,
+                max_length=1000,
+                beam_indices=None,
+            )
+            final_sequences = sequence_outputs["sequences"].cpu()
+            final_probs = sequence_outputs["sequence_scores"].cpu().item()
+        else:
+            final_sequences = current_ids.cpu()
+            final_probs = beam_scores.cpu().item()
 
-        sequence_outputs = beam_scorer.finalize(
-            current_ids,
-            beam_scores,
-            next_tokens,
-            next_indices,
-            pad_token_id=self.model.config.pad_token_id,
-            eos_token_id=self.model.config.eos_token_id,
-            max_length=max_length,
-            beam_indices=None,
-        )
-
-        final_sequences = sequence_outputs["sequences"].cpu()
         orthographic_transcription = self.tokenizer.batch_decode(final_sequences, skip_special_tokens=True)[0]
         # skip first character as it's always an empty space
         orthographic_transcription = orthographic_transcription[1:]
-        final_probs = sequence_outputs["sequence_scores"].cpu().item()
-
-        print(orthographic_transcription)
 
         return orthographic_transcription, final_probs
