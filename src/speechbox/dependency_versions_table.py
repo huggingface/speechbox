@@ -2,6 +2,7 @@
 # 1. modify the `_deps` dict in setup.py
 # 2. run `make deps_table_update``
 deps = {
+    "accelerate": "accelerate>=0.14.0",
     "torch": "torch>=1.9",
     "transformers": "transformers>=4.24.0",
     "black": "black==22.8",
@@ -10,4 +11,5 @@ deps = {
     "numpy": "numpy",
     "filelock": "filelock",
     "importlib_metadata": "importlib_metadata",
+    "datasets": "datasets>=2.7.0",
 }

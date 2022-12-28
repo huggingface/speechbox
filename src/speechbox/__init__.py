@@ -22,11 +22,11 @@
 # to defer the actual importing for when the objects are requested. This way `import transformers` provides the names
 # in the namespace without actually importing anything (and especially none of the backends).
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
-from .utils import is_transformers_available
+from .utils import is_accelerate_available, is_transformers_available
 
-if is_transformers_available():
+if is_transformers_available() and is_accelerate_available():
     from .restore import PunctuationRestorer
 else:
-    from .utils.dummy_transformers_objects import *
+    from .utils.dummy_transformers_and_accelerate_objects import *

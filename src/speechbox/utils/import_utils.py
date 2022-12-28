@@ -34,8 +34,20 @@ except importlib_metadata.PackageNotFoundError:
     _transformers_available = False
 
 
+_accelerate_available = importlib.util.find_spec("accelerate") is not None
+try:
+    _ = importlib_metadata.version("accelerate")
+    _accelerate_metadata = importlib_metadata.metadata("accelerate")
+except importlib_metadata.PackageNotFoundError:
+    _accelerate_available = False
+
+
 def is_transformers_available():
     return _transformers_available
+
+
+def is_accelerate_available():
+    return _accelerate_available
 
 
 TRANSFORMERS_IMPORT_ERROR = """
@@ -43,9 +55,15 @@ TRANSFORMERS_IMPORT_ERROR = """
 """
 
 
+ACCELERATE_IMPORT_ERROR = """
+{0} requires the accelerate library but it was not found in your environment. You can install it with pip: `pip install accelerate`. Please note that you may need to restart your runtime after installation.
+"""
+
+
 BACKENDS_MAPPING = OrderedDict(
     [
         ("transformers", (is_transformers_available, TRANSFORMERS_IMPORT_ERROR)),
+        ("accelerate", (is_accelerate_available, ACCELERATE_IMPORT_ERROR)),
     ]
 )
 

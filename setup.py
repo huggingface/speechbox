@@ -77,7 +77,7 @@ from setuptools import find_packages, setup
 # IMPORTANT:
 # 1. all dependencies should be listed here with their version requirements if any
 # 2. once modified, run: `make deps_table_update` to update src/diffusers/dependency_versions_table.py
-_deps = ["torch>=1.9", "transformers>=4.24.0", "black==22.8", "isort>=5.5.4", "flake8>=3.8.3", "numpy", "filelock", "importlib_metadata"]
+_deps = ["accelerate>=0.14.0", "torch>=1.9", "transformers>=4.24.0", "black==22.8", "isort>=5.5.4", "flake8>=3.8.3", "numpy", "filelock", "importlib_metadata", "datasets>=2.7.0"]
 
 # this is a lookup table with items like:
 #
@@ -150,7 +150,7 @@ extras = {}
 extras["quality"] = deps_list("black", "isort", "flake8")
 
 
-extras["dev"] = extras["quality"]
+extras["dev"] = extras["quality"] + deps_list("transformers", "accelerate", "datasets")
 
 
 install_requires = [
@@ -162,7 +162,7 @@ install_requires = [
 
 setup(
     name="speechbox",
-    version="0.1.0",  # expected format is one of x.y.z.dev0, or x.y.z.rc1 or x.y.z (no to dashes, yes to dots)
+    version="0.1.1",  # expected format is one of x.y.z.dev0, or x.y.z.rc1 or x.y.z (no to dashes, yes to dots)
     description="Speechbox",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
