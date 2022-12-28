@@ -21,11 +21,17 @@ pip install speechbox
 
 | Task | Description |
 |-|-|
-| [Punctuation Restoration](#punctuation-restoration) | Punctuation restoration allows one to predict capitalized words as well as punctuation by using [Whisper](https://huggingface.co/models?other=whisper). It relies on the simple premise that Whisper is good enough to transcribe any English ASR dataset. |
+| [Punctuation Restoration](#punctuation-restoration) | Punctuation restoration allows one to predict capitalized words as well as punctuation by using [Whisper](https://huggingface.co/models?other=whisper). |
 
 ## Punctuation Restoration
 
-For punctuation restoration, you need to install [Transformers](https://github.com/huggingface/transformers):
+Punctuation restoration relies on the premise that [Whisper](https://huggingface.co/models?other=whisper) can understand universal speech. The model is forced to predict the passed words, 
+but is allowed to capitalized letters, remove or add blank spaces as well as add punctuation. 
+Punctuation is simply defined as the offial Python [string.Punctuation](https://docs.python.org/3/library/string.html#string.punctuation) characters.
+
+### Example
+
+In order to use the punctuation restoration task, you need to install [Transformers](https://github.com/huggingface/transformers):
 
 ```
 pip install --upgrade transformers
@@ -63,4 +69,3 @@ print("Restored text:\n", restored_text)
 ```
 
 See [examples/restore](https://github.com/huggingface/speechbox/blob/main/examples/restore.py) for more information.
-
