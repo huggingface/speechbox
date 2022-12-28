@@ -25,9 +25,41 @@ pip install speechbox
 
 ## Punctuation Restoration
 
-```python
-restorer = Restorer.from_pretrained(MODEL_ID)
+For punctuation restoration, you need to install [Transformers](https://github.com/huggingface/transformers):
 
+```
+pip install --upgrade transformers
+```
+
+For this example, we will additionally make use of [datasets](https://github.com/huggingface/datasets) to load a sample audio file:
+
+```
+pip install --upgrade datasets
+```
+
+Now we stream a single audio sample, load the punctuation restoring class with ["openai/whisper-tiny.en"](https://huggingface.co/openai/whisper-tiny.en) and add punctuation to the transcription.
+
+
+```python
+from speechbox import Restorer
+from datasets import load_dataset
+
+streamed_dataset = load_dataset("librispeech_asr", "clean", split="validation", streaming=True)
+
+# get first sample
+sample = next(iter(streamed_dataset))
+
+# print out normalized transcript
+print(sample["text"])
+# => "HE WAS IN A FEVERED STATE OF MIND OWING TO THE BLIGHT HIS WIFE'S ACTION THREATENED TO CAST UPON HIS ENTIRE FUTURE"
+
+# load the restoring class
+restorer = Restorer.from_pretrained("openai/whisper-tiny.en")
+restorer.to("cuda")
+
+restored_text, log_probs = restorer(sample["audio"]["array"], sample["text"], sampling_rate=sample["audio"]["sampling_rate"], num_beams=1)
+
+print("Restored text:\n", restored_text)
 ```
 
 See [examples/restore](https://github.com/huggingface/speechbox/blob/main/examples/restore.py) for more information.

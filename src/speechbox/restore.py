@@ -85,7 +85,9 @@ class Restorer:
 
         # Quick quality check, lower-cased words have to be identical when decoding
         _flat_lower_words = [item for sublist in _lower_words for item in sublist]
-        assert self.tokenizer.decode(_flat_lower_words)[1:] == transcript, f"Decoding of {transcript} is wrong."
+        assert (
+            self.tokenizer.decode(_flat_lower_words)[1:] == transcript.lower()
+        ), f"Decoding of {transcript} is wrong."
 
         # put all possible words in a "all_words" list
         all_words = [lower_words, upper_words, _lower_words, _upper_words, _all_upper_words]
