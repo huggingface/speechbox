@@ -27,12 +27,12 @@ def restore(example):
     audio = example["audio"]["array"]
     sampling_rate = example["audio"]["sampling_rate"]
     text = example["text"].lower()
-    restored_text = restorer(audio, text, sampling_rate=sampling_rate)
-    return {"orig_transcript": text, "new_transcript": restored_text}
+    restored_text, probs = restorer(audio, text, sampling_rate=sampling_rate)
+    return {"orig_transcript": text, "new_transcript": restored_text, "probs": probs}
 
 out = dataset.map(restore, remove_columns=dataset.column_names)
 
-df = pd.DataFrame({'orig_transcript': out["orig_transcript"], 'new_transcript': out["new_transcript"]})
+df = pd.DataFrame({'orig_transcript': out["orig_transcript"], 'new_transcript': out["new_transcript"], 'props': out["probs"]})
 
 with open(LOCAL_FILE, "w") as f:
     f.write(df.to_csv(index=False))
