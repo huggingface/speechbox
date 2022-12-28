@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import string
-from typing import List, Union, Optional
+from typing import List, Optional, Union
 
 import numpy as np
 import torch
 import tqdm
-from transformers import WhisperForConditionalGeneration, WhisperProcessor, BeamSearchScorer
+from transformers import (BeamSearchScorer, WhisperForConditionalGeneration,
+                          WhisperProcessor)
 
 
 class Restorer:
@@ -59,7 +60,9 @@ class Restorer:
             beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=device)
             beam_scores[:, 1:] = -1e9
             beam_scores = beam_scores.view((batch_size * num_beams,))
-            beam_scorer = BeamSearchScorer(batch_size=batch_size, num_beams=num_beams, length_penalty=0.0, device=device)
+            beam_scorer = BeamSearchScorer(
+                batch_size=batch_size, num_beams=num_beams, length_penalty=0.0, device=device
+            )
         else:
             beam_scores = torch.zeros((batch_size,), dtype=torch.float, device=device)
             beam_scorer = None
@@ -136,7 +139,9 @@ class Restorer:
 
                     # if previously punctuation wasn't used, it can be used now
                     if not uses_punc[i]:
-                        next_possible_tokens = torch.cat([torch.tensor(self.punctuation), next_possible_tokens], dim=-1)
+                        next_possible_tokens = torch.cat(
+                            [torch.tensor(self.punctuation), next_possible_tokens], dim=-1
+                        )
                 else:
                     # here we are in the scenario that we're inside one or more words already. Then we simply need to continue this word
                     in_word_step = in_word_index[i]
@@ -157,9 +162,7 @@ class Restorer:
             next_scores = scores + beam_scores[:, None].expand_as(scores)
             next_scores = next_scores.view(batch_size, num_beams * vocab_size)
 
-            next_token_scores, next_tokens = torch.topk(
-                next_scores, 2 * num_beams, dim=1, largest=True, sorted=True
-            )
+            next_token_scores, next_tokens = torch.topk(next_scores, 2 * num_beams, dim=1, largest=True, sorted=True)
 
             next_indices = next_tokens // vocab_size
             next_tokens = next_tokens % vocab_size
@@ -189,7 +192,10 @@ class Restorer:
             if num_beams == 1 and current_ids[0, -1].item() == self.model.config.eos_token_id:
                 break
 
-            uses_punc = (torch.tensor(self.punctuation)[None, :].broadcast_to(num_beams, len(self.punctuation)) == beam_next_tokens.cpu()[:, None].broadcast_to(num_beams, len(self.punctuation))).any(-1)
+            uses_punc = (
+                torch.tensor(self.punctuation)[None, :].broadcast_to(num_beams, len(self.punctuation))
+                == beam_next_tokens.cpu()[:, None].broadcast_to(num_beams, len(self.punctuation))
+            ).any(-1)
 
             # Retrive which token track was chosen
             old_token_track = token_track.copy()
@@ -213,15 +219,18 @@ class Restorer:
             old_word_idx = word_idx.clone()
             old_is_word_index = in_word_index.clone()
             for i, ids in enumerate(current_ids[:, num_start_ids:]):
+                idx = beam_idx[i]
+
                 # Don't bother if word is already finished
                 if old_word_idx[idx] >= num_words:
                     word_idx[i] = old_word_idx[idx]
                     continue
 
-                idx = beam_idx[i]
-
                 potential_word = all_words[token_track[i][0]][old_word_idx[idx]]
-                has_ended = ids.shape[0] >= len(potential_word) and ids.cpu()[-len(potential_word):].tolist() == potential_word
+                has_ended = (
+                    ids.shape[0] >= len(potential_word)
+                    and ids.cpu()[-len(potential_word) :].tolist() == potential_word
+                )
 
                 if has_ended:
                     word_idx[i] = old_word_idx[idx] + 1
