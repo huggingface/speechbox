@@ -30,9 +30,9 @@ just hang out ☕.
 
 # Tasks
 
-| Task | Description |
-|-|-|
-| [Punctuation Restoration](#punctuation-restoration) | Punctuation restoration allows one to predict capitalized words as well as punctuation by using [Whisper](https://huggingface.co/models?other=whisper). |
+| Task | Description | Author |
+|-|-|-|
+| [Punctuation Restoration](#punctuation-restoration) | Punctuation restoration allows one to predict capitalized words as well as punctuation by using [Whisper](https://huggingface.co/models?other=whisper). | [Patrick von Platen](https://github.com/patrickvonplaten) |
 
 ## Punctuation Restoration
 
