@@ -40,10 +40,6 @@ class PunctuationRestorer:
 
         return word_tokens
 
-    def get_ranks(self, top_k, ids):
-        ranks = [(top_k == i).nonzero() if i in top_k else float("inf") for i in ids]
-        return ranks
-
     def __call__(
         self,
         audio: Union[np.ndarray, List[np.ndarray]],
@@ -51,22 +47,13 @@ class PunctuationRestorer:
         sampling_rate: Optional[int] = None,
         num_beams: int = 1,
     ):
+        # 1. Define some import variables
         device = self.model.device
         batch_size = 1
         vocab_size = self.model.config.vocab_size
         num_words = len(transcript.split())
 
-        if num_beams > 1:
-            beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=device)
-            beam_scores[:, 1:] = -1e9
-            beam_scores = beam_scores.view((batch_size * num_beams,))
-            beam_scorer = BeamSearchScorer(
-                batch_size=batch_size, num_beams=num_beams, length_penalty=0.0, device=device
-            )
-        else:
-            beam_scores = torch.zeros((batch_size,), dtype=torch.float, device=device)
-            beam_scorer = None
-
+        # 2. Define all possible words that can be generated
         # there are three possibilities of how a fully orthographic version of `transcript` can
         # look like:
         # 1) All lower-cased, e.g. "hello"
@@ -83,16 +70,17 @@ class PunctuationRestorer:
         _upper_words = self.convert_words([f" {word.lower().capitalize()}" for word in transcript.split()])
         _all_upper_words = self.convert_words([f" {word.upper()}" for word in transcript.split()])
 
+        # put all possible words in a "all_words" list
+        all_words = [lower_words, upper_words, _lower_words, _upper_words, _all_upper_words]
+
+        # 3. Sanity check
         # Quick quality check, lower-cased words have to be identical when decoding
         _flat_lower_words = [item for sublist in _lower_words for item in sublist]
         assert (
             self.tokenizer.decode(_flat_lower_words)[1:] == transcript.lower()
         ), f"Decoding of {transcript} is wrong."
 
-        # put all possible words in a "all_words" list
-        all_words = [lower_words, upper_words, _lower_words, _upper_words, _all_upper_words]
-
-        # Get encoder hidden states
+        # 4. Get encoder hidden states
         input_features = self.processor(audio, sampling_rate=sampling_rate, return_tensors="pt")["input_features"]
         input_features = input_features.to(device)
 
@@ -100,6 +88,7 @@ class PunctuationRestorer:
             encoder_hidden_states = self.model.model.encoder(input_features).last_hidden_state
             encoder_hidden_states = encoder_hidden_states.repeat_interleave(num_beams, dim=0)
 
+        # 5. Prepare initial ids to be decoded
         # Define `decoder_start_ids` as initial `current_ids`; they are quite specific to whisper-{}.en checkpoints
         decoder_start_ids = [self.model.config.decoder_start_token_id]
         if self.model.config.forced_decoder_ids is not None:
@@ -109,21 +98,35 @@ class PunctuationRestorer:
         decoder_start_ids = torch.tensor(decoder_start_ids, dtype=torch.long, device=device)[None, :]
         decoder_start_ids = decoder_start_ids.repeat_interleave(num_beams, dim=0)
         current_ids = decoder_start_ids.broadcast_to(encoder_hidden_states.shape[:1] + decoder_start_ids.shape[1:])
-        num_start_ids = decoder_start_ids.shape[-1]
 
-        # create running variables
+        # 6. Define the beam scorer
+        if num_beams > 1:
+            beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=device)
+            beam_scores[:, 1:] = -1e9
+            beam_scores = beam_scores.view((batch_size * num_beams,))
+            beam_scorer = BeamSearchScorer(
+                batch_size=batch_size, num_beams=num_beams, length_penalty=0.0, device=device
+            )
+        else:
+            beam_scores = torch.zeros((batch_size,), dtype=torch.float, device=device)
+            beam_scorer = None
+
+        # 7. Create some running variables that will be changed during the decoding
+        num_start_ids = decoder_start_ids.shape[-1]
         token_track = [[0] for _ in range(num_beams)]
         word_idx = torch.zeros((num_beams,), dtype=torch.long)
         is_word_ended = torch.ones_like(word_idx)
         in_word_index = torch.zeros_like(word_idx)
         uses_punc = torch.zeros_like(word_idx)
 
-        # loop over words of possibilities 1), 2) and 3).
+        # 8. Start the decoding loop
         while True:
+            # 8.1 forward the current ideas and retrieve log softmax
             with torch.no_grad():
                 logits = self.model(decoder_input_ids=current_ids, encoder_outputs=encoder_hidden_states).logits[:, -1]
                 scores = torch.nn.functional.log_softmax(logits, dim=-1)
 
+            # 8.2 Constrain tokens that can be generated to tokens of words as defined above in `all_words`
             all_next_tokens = [None for _ in range(num_beams)]
             for i, is_ended in enumerate(is_word_ended):
                 can_finish = word_idx[i] >= num_words
@@ -155,12 +158,12 @@ class PunctuationRestorer:
                     next_possible_tokens = torch.tensor(next_possible_tokens, dtype=torch.long)
                     all_next_tokens[i] = next_possible_tokens
 
-                # allow only next possible tokens to be generated
+                # constrain scores
                 next_possible_scores = scores[i][next_possible_tokens].clone()
                 scores[i] = torch.zeros_like(scores[i]) - float("inf")
                 scores[i][next_possible_tokens] = next_possible_scores
 
-            # Run beam search
+            # 8.3 Run beam search
             next_scores = scores + beam_scores[:, None].expand_as(scores)
             next_scores = next_scores.view(batch_size, num_beams * vocab_size)
 
@@ -188,18 +191,21 @@ class PunctuationRestorer:
                 beam_next_tokens = next_tokens[0, :1]
                 beam_idx = next_indices[0, :1]
 
+            # 8.4 Concatenate predicted ids to current ids
             current_ids = torch.cat([current_ids[beam_idx, :], beam_next_tokens.unsqueeze(-1)], dim=-1)
 
+            # 8.5 Break when greedy search generates EOS
             # if we do greedy search we can already finish here
             if num_beams == 1 and current_ids[0, -1].item() == self.model.config.eos_token_id:
                 break
 
+            # 8.6 Check if punctuation was generated
             uses_punc = (
                 torch.tensor(self.punctuation)[None, :].broadcast_to(num_beams, len(self.punctuation))
                 == beam_next_tokens.cpu()[:, None].broadcast_to(num_beams, len(self.punctuation))
             ).any(-1)
 
-            # Retrive which token track was chosen
+            # 8.7 Determine which token track was chosen
             old_token_track = token_track.copy()
             for i, use_punc in enumerate(uses_punc):
                 idx = beam_idx[i]
@@ -217,7 +223,7 @@ class PunctuationRestorer:
                     # if it's a new word, we have to find out which track(s) was chosen
                     token_track[i] = (all_next_tokens[idx] == beam_next_tokens[i].cpu()).nonzero().flatten().tolist()
 
-            # retrieve whether word has ended and where in word we are
+            # 8.8 Determine whether we are at end of word
             old_word_idx = word_idx.clone()
             old_is_word_index = in_word_index.clone()
             for i, ids in enumerate(current_ids[:, num_start_ids:]):
@@ -247,10 +253,11 @@ class PunctuationRestorer:
                     is_word_ended[i] = 0
                     in_word_index[i] = old_is_word_index[idx] + 1
 
-            # if we do beam search we only finish if all beams have been run
+            # 8.9 If we do beam search we only finish if all beams have been run
             if num_beams > 1 and len(beam_scorer._beam_hyps[0]) >= num_beams:
                 break
 
+        # 9. Finalize beams and retrieve final sequences as well as log probs
         if beam_scorer is not None:
             # max-lenth doesn't matter here
             sequence_outputs = beam_scorer.finalize(
@@ -269,6 +276,8 @@ class PunctuationRestorer:
             final_sequences = current_ids.cpu()
             final_probs = beam_scores.cpu().item()
 
+        
+        # 10. Decode generated tokens
         orthographic_transcription = self.tokenizer.batch_decode(final_sequences, skip_special_tokens=True)[0]
         # skip first character as it's always an empty space
         orthographic_transcription = orthographic_transcription[1:]

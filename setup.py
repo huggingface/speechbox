@@ -154,9 +154,9 @@ extras["dev"] = extras["quality"]
 
 
 install_requires = [
+    deps["torch"],
     deps["importlib_metadata"],
     deps["filelock"],
-    deps["transformers"],
     deps["numpy"],
 ]
 

@@ -17,6 +17,16 @@
 pip install speechbox
 ```
 
+# Contributing
+
+We ❤️  contributions from the open-source community! 
+If you want to contribute to this library, please check out our [Contribution guide](https://github.com/huggingface/speechbox/blob/main/CONTRIBUTING.md).
+You can look out for [issues](https://github.com/huggingface/speechbox/issues) you'd like to tackle to contribute to the library.
+- See [Good first issues](https://github.com/huggingface/speechbox/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22) for general opportunities to contribute
+
+Also, say 👋 in our public Discord channel <a href="https://discord.gg/G7tWnz98XR"><img alt="Join us on Discord" src="https://img.shields.io/discord/823813159592001537?color=5865F2&logo=discord&logoColor=white"></a> under **ML for Audio and Speech**. We discuss the new trends about machine learning methods for speech, help each other with contributions, personal projects or
+just hang out ☕.
+
 # Tasks
 
 | Task | Description |
@@ -28,6 +38,19 @@ pip install speechbox
 Punctuation restoration relies on the premise that [Whisper](https://huggingface.co/models?other=whisper) can understand universal speech. The model is forced to predict the passed words, 
 but is allowed to capitalized letters, remove or add blank spaces as well as add punctuation. 
 Punctuation is simply defined as the offial Python [string.Punctuation](https://docs.python.org/3/library/string.html#string.punctuation) characters.
+
+**Note**: For now this package has only been tested with:
+- [openai/whisper-tiny.en](https://huggingface.co/openai/whisper-tiny.en)
+- [openai/whisper-base.en](https://huggingface.co/openai/whisper-base.en)
+- [openai/whisper-small.en](https://huggingface.co/openai/whisper-small.en)
+- [openai/whisper-medium.en](https://huggingface.co/openai/whisper-medium.en)
+
+and **only** on some 80 audio samples of [patrickvonplaten/librispeech_asr_dummy](https://huggingface.co/datasets/patrickvonplaten/librispeech_asr_dummy).
+
+### Web Demo
+If you just want to play around with some web demos, you can try out the following 🚀 Spaces:
+
+[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/speechbox/whisper-restore-punctuation)
 
 ### Example
 
