@@ -16,3 +16,19 @@
 ```bash
 pip install speechbox
 ```
+
+# Tasks
+
+| Task | Description |
+|-|-|
+| [Punctuation Restoration](#punctuation-restoration) | Punctuation restoration allows one to predict capitalized words as well as punctuation by using [Whisper](https://huggingface.co/models?other=whisper). It relies on the simply premise that Whisper is good enough to transcribe any English ASR dataset. |
+
+## Punctuation Restoration
+
+```python
+restorer = Restorer.from_pretrained(MODEL_ID)
+
+```
+
+See [examples/restore](https://github.com/huggingface/speechbox/blob/main/examples/restore.py) for more information.
+
