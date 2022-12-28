@@ -48,6 +48,8 @@ Punctuation is simply defined as the offial Python [string.Punctuation](https://
 
 and **only** on some 80 audio samples of [patrickvonplaten/librispeech_asr_dummy](https://huggingface.co/datasets/patrickvonplaten/librispeech_asr_dummy).
 
+See some transcribed results [here](https://huggingface.co/datasets?other=speechbox_punc).
+
 ### Web Demo
 
 If you want to try out the punctuation restoration, you can try out the following 🚀 Spaces:
