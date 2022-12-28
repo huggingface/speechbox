@@ -37,3 +37,6 @@ style:
 	black --preview $(check_dirs)
 	isort $(check_dirs)
 	${MAKE} autogenerate_code
+
+fix-copies:
+	python utils/check_dummies.py --fix_and_overwrite

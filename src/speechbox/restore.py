@@ -9,7 +9,7 @@ from transformers import (BeamSearchScorer, WhisperForConditionalGeneration,
                           WhisperProcessor)
 
 
-class Restorer:
+class PunctuationRestorer:
     def __init__(self, model: WhisperForConditionalGeneration, processor: WhisperProcessor):
         self.processor = processor
         self.tokenizer = processor.tokenizer

@@ -47,7 +47,7 @@ Now we stream a single audio sample, load the punctuation restoring class with [
 
 
 ```python
-from speechbox import Restorer
+from speechbox import PunctuationRestorer
 from datasets import load_dataset
 
 streamed_dataset = load_dataset("librispeech_asr", "clean", split="validation", streaming=True)
@@ -60,7 +60,7 @@ print(sample["text"])
 # => "HE WAS IN A FEVERED STATE OF MIND OWING TO THE BLIGHT HIS WIFE'S ACTION THREATENED TO CAST UPON HIS ENTIRE FUTURE"
 
 # load the restoring class
-restorer = Restorer.from_pretrained("openai/whisper-tiny.en")
+restorer = PunctuationRestorer.from_pretrained("openai/whisper-tiny.en")
 restorer.to("cuda")
 
 restored_text, log_probs = restorer(sample["audio"]["array"], sample["text"], sampling_rate=sample["audio"]["sampling_rate"], num_beams=1)

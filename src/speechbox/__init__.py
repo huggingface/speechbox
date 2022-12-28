@@ -24,4 +24,9 @@
 
 __version__ = "0.0.2"
 
-from .restore import Restorer
+from .utils import is_transformers_available
+
+if is_transformers_available():
+    from .restore import PunctuationRestorer
+else:
+    from .utils.dummy_transformers_objects import *

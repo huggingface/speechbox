@@ -4,7 +4,7 @@ import pandas as pd
 from datasets import load_dataset
 from huggingface_hub import CommitOperationAdd, HfApi, create_repo, login
 
-from speechbox import Restorer
+from speechbox import PunctuationRestorer
 
 REPO_ID = "patrickvonplaten/librispeech_asr_dummy_orthograph"
 LOCAL_FILE = os.path.join("~/transcripts.csv")
@@ -15,7 +15,7 @@ MODEL_ID = "openai/whisper-tiny.en"
 dataset = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean")["validation"]
 # dataset = dataset.select(range(48, 49))
 
-restorer = Restorer.from_pretrained(MODEL_ID)
+restorer = PunctuationRestorer.from_pretrained(MODEL_ID)
 restorer.to("cuda")
 
 
