@@ -4,7 +4,6 @@ from typing import List, Optional, Union
 
 import numpy as np
 import torch
-import tqdm
 from transformers import (BeamSearchScorer, WhisperForConditionalGeneration,
                           WhisperProcessor)
 
@@ -27,7 +26,7 @@ class PunctuationRestorer:
 
     def get_punctuation_tokens(self):
         punctuation_tokens = []
-        for i in tqdm.tqdm(range(len(self.tokenizer))):
+        for i in range(len(self.tokenizer)):
             if self.tokenizer.convert_ids_to_tokens(i) in list(string.punctuation):
                 punctuation_tokens.append(i)
         return punctuation_tokens

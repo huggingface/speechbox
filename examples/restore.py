@@ -30,7 +30,7 @@ def restore(example):
     return {"orig_transcript": text, "new_transcript": restored_text, "probs": probs}
 
 
-out = dataset.map(restore, remove_columns=dataset.column_names)
+out = dataset.map(restore, remove_columns=dataset.column_names, keep_in_memory=True)
 
 df = pd.DataFrame(
     {"orig_transcript": out["orig_transcript"], "new_transcript": out["new_transcript"], "props": out["probs"]}
