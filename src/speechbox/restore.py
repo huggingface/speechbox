@@ -123,7 +123,8 @@ class PunctuationRestorer:
         while True:
             # 8.1 forward the current ideas and retrieve log softmax
             with torch.no_grad():
-                logits = self.model(decoder_input_ids=current_ids, encoder_outputs=encoder_hidden_states).logits[:, -1]
+                encoder_outputs = (encoder_hidden_states,)
+                logits = self.model(decoder_input_ids=current_ids, encoder_outputs=encoder_outputs).logits[:, -1]
                 scores = torch.nn.functional.log_softmax(logits, dim=-1)
 
             # 8.2 Constrain tokens that can be generated to tokens of words as defined above in `all_words`
