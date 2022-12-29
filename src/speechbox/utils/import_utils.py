@@ -42,12 +42,24 @@ except importlib_metadata.PackageNotFoundError:
     _accelerate_available = False
 
 
+_scipy_available = importlib.util.find_spec("scipy") is not None
+try:
+    _ = importlib_metadata.version("scipy")
+    _scipy_metadata = importlib_metadata.metadata("scipy")
+except importlib_metadata.PackageNotFoundError:
+    _scipy_available = False
+
+
 def is_transformers_available():
     return _transformers_available
 
 
 def is_accelerate_available():
     return _accelerate_available
+
+
+def is_scipy_available():
+    return _scipy_available
 
 
 TRANSFORMERS_IMPORT_ERROR = """
@@ -60,10 +72,16 @@ ACCELERATE_IMPORT_ERROR = """
 """
 
 
+SCIPY_IMPORT_ERROR = """
+{0} requires the scipy library but it was not found in your environment. You can install it with pip: `pip install scipy`. Please note that you may need to restart your runtime after installation.
+"""
+
+
 BACKENDS_MAPPING = OrderedDict(
     [
         ("transformers", (is_transformers_available, TRANSFORMERS_IMPORT_ERROR)),
         ("accelerate", (is_accelerate_available, ACCELERATE_IMPORT_ERROR)),
+        ("scipy", (is_scipy_available, SCIPY_IMPORT_ERROR)),
     ]
 )
 

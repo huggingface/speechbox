@@ -24,9 +24,9 @@
 
 __version__ = "0.1.2"
 
-from .utils import is_accelerate_available, is_transformers_available
+from .utils import is_accelerate_available, is_scipy_available, is_transformers_available
 
-if is_transformers_available() and is_accelerate_available():
+if is_transformers_available() and is_accelerate_available() and is_scipy_available():
     from .restore import PunctuationRestorer
 else:
     from .utils.dummy_transformers_and_accelerate_objects import *
