@@ -50,6 +50,22 @@ except importlib_metadata.PackageNotFoundError:
     _scipy_available = False
 
 
+_pyannote_available = importlib.util.find_spec("pyannote.audio") is not None
+try:
+    _ = importlib_metadata.version("pyannote.audio")
+    _pyannote_metadata = importlib_metadata.metadata("pyannote.audio")
+except importlib_metadata.PackageNotFoundError:
+    _pyannote_available = False
+
+
+_torchaudio_available = importlib.util.find_spec("torchaudio") is not None
+try:
+    _ = importlib_metadata.version("torchaudio")
+    _torchaudio_metadata = importlib_metadata.metadata("orchaudio")
+except importlib_metadata.PackageNotFoundError:
+    _torchaudio_available = False
+
+
 def is_transformers_available():
     return _transformers_available
 
@@ -60,6 +76,14 @@ def is_accelerate_available():
 
 def is_scipy_available():
     return _scipy_available
+
+
+def is_pyannote_available():
+    return _pyannote_available
+
+
+def is_torchaudio_available():
+    return _torchaudio_available
 
 
 TRANSFORMERS_IMPORT_ERROR = """
@@ -77,11 +101,22 @@ SCIPY_IMPORT_ERROR = """
 """
 
 
+PYANNOTE_IMPORT_ERROR = """
+{0} requires the pyannote.audio library but it was not found in your environment. You can install it with pip: `pip install pyannote.audio`. Please note that you may need to restart your runtime after installation.
+"""
+
+
+TORCHAUDIO_IMPORT_ERROR = """
+{0} requires the torchaudio library but it was not found in your environment. You can install it with pip: `pip install torchaudio`. Please note that you may need to restart your runtime after installation.
+"""
+
 BACKENDS_MAPPING = OrderedDict(
     [
         ("transformers", (is_transformers_available, TRANSFORMERS_IMPORT_ERROR)),
         ("accelerate", (is_accelerate_available, ACCELERATE_IMPORT_ERROR)),
         ("scipy", (is_scipy_available, SCIPY_IMPORT_ERROR)),
+        ("pyannote.audio", (is_pyannote_available, PYANNOTE_IMPORT_ERROR)),
+        ("torchaudio", (is_torchaudio_available, TORCHAUDIO_IMPORT_ERROR)),
     ]
 )
 

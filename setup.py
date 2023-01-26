@@ -77,7 +77,20 @@ from setuptools import find_packages, setup
 # IMPORTANT:
 # 1. all dependencies should be listed here with their version requirements if any
 # 2. once modified, run: `make deps_table_update` to update src/diffusers/dependency_versions_table.py
-_deps = ["accelerate>=0.14.0", "torch>=1.9", "transformers>=4.24.0", "black==22.8", "isort>=5.5.4", "flake8>=3.8.3", "numpy", "filelock", "importlib_metadata", "datasets>=2.7.0"]
+_deps = [
+    "accelerate>=0.14.0",
+    "torch>=1.9",
+    "transformers>=4.24.0",
+    "black==22.8",
+    "isort>=5.5.4",
+    "flake8>=3.8.3",
+    "numpy",
+    "filelock",
+    "importlib_metadata",
+    "datasets>=2.7.0",
+    "torchaudio",
+    "pyannote.audio",
+]
 
 # this is a lookup table with items like:
 #
