@@ -30,9 +30,10 @@ from .utils import (is_accelerate_available, is_pyannote_available,
 
 if is_transformers_available() and is_accelerate_available() and is_scipy_available():
     from .restore import PunctuationRestorer
+else:
+    from .utils.dummy_transformers_and_accelerate_and_scipy_objects import *
 
 if is_transformers_available() and is_torchaudio_available() and is_pyannote_available():
     from .diarize import ASRDiarizationPipeline
-
 else:
-    from .utils.dummy_transformers_and_accelerate_and_scipy_objects import *
+    from .utils.dummy_transformers_and_torchaudio_and_pyannote_objects import *
