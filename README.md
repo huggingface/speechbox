@@ -130,12 +130,11 @@ pip install --upgrade datasets
 Now we stream a single audio sample, pass it to the ASR + Diarization pipeline, and return the speaker-segmented transcription:
 
 ```python
-from speechbox import ASRDiarizationPipeline
 import torch
+from speechbox import ASRDiarizationPipeline
 from datasets import load_dataset
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
-
 pipeline = ASRDiarizationPipeline.from_pretrained("openai/whisper-tiny", device=device)
 
 # load dataset of concatenated LibriSpeech samples
