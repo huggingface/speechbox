@@ -3,8 +3,8 @@ import string
 from typing import List, Optional, Union
 
 import numpy as np
-from scipy.signal import resample
 import torch
+from scipy.signal import resample
 from transformers import (BeamSearchScorer, WhisperForConditionalGeneration,
                           WhisperProcessor)
 
@@ -85,7 +85,9 @@ class PunctuationRestorer:
             audio = resample(audio, int(audio.shape[-1] * self.model_sampling_rate / sampling_rate))
 
         # 4. Get encoder hidden states
-        input_features = self.processor(audio, sampling_rate=self.model_sampling_rate, return_tensors="pt")["input_features"]
+        input_features = self.processor(audio, sampling_rate=self.model_sampling_rate, return_tensors="pt")[
+            "input_features"
+        ]
         input_features = input_features.to(device)
 
         with torch.no_grad():

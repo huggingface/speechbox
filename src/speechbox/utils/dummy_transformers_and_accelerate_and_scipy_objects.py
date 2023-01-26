@@ -5,15 +5,15 @@ from ..utils import DummyObject, requires_backends
 
 
 class PunctuationRestorer(metaclass=DummyObject):
-    _backends = ["transformers", "accelerate"]
+    _backends = ["transformers", "accelerate", "scipy"]
 
     def __init__(self, *args, **kwargs):
-        requires_backends(self, ["transformers", "accelerate"])
+        requires_backends(self, ["transformers", "accelerate", "scipy"])
 
     @classmethod
     def from_config(cls, *args, **kwargs):
-        requires_backends(cls, ["transformers", "accelerate"])
+        requires_backends(cls, ["transformers", "accelerate", "scipy"])
 
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
-        requires_backends(cls, ["transformers", "accelerate"])
+        requires_backends(cls, ["transformers", "accelerate", "scipy"])
