@@ -33,5 +33,6 @@ if is_transformers_available() and is_accelerate_available() and is_scipy_availa
 
 if is_transformers_available() and is_torchaudio_available() and is_pyannote_available():
     from .diarize import ASRDiarizationPipeline
+
 else:
     from .utils.dummy_transformers_and_accelerate_objects import *
