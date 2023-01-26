@@ -28,5 +28,6 @@ from .utils import is_accelerate_available, is_scipy_available, is_transformers_
 
 if is_transformers_available() and is_accelerate_available() and is_scipy_available():
     from .restore import PunctuationRestorer
+    from .diarize import ASRDiarizationPipeline
 else:
     from .utils.dummy_transformers_and_accelerate_objects import *
