@@ -12,4 +12,6 @@ deps = {
     "filelock": "filelock",
     "importlib_metadata": "importlib_metadata",
     "datasets": "datasets>=2.7.0",
+    "torchaudio": "torchaudio",
+    "pyannote.audio": "pyannote.audio",
 }

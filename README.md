@@ -33,6 +33,7 @@ just hang out ☕.
 | Task | Description | Author |
 |-|-|-|
 | [Punctuation Restoration](#punctuation-restoration) | Punctuation restoration allows one to predict capitalized words as well as punctuation by using [Whisper](https://huggingface.co/models?other=whisper). | [Patrick von Platen](https://github.com/patrickvonplaten) |
+| [ASR With Speaker Diarization](#asr-with-speaker-diarization) | Transcribe long audio files, such as meeting recordings, with speaker information (who spoke when) and the transcribed text. | [Sanchit Gandhi](https://github.com/sanchit-gandhi) |
 
 ## Punctuation Restoration
 
@@ -96,3 +97,51 @@ print("Restored text:\n", restored_text)
 ```
 
 See [examples/restore](https://github.com/huggingface/speechbox/blob/main/examples/restore.py) for more information.
+
+## ASR With Speaker Diarization
+Given an unlabelled audio segment, a speaker diarization model is used to predict "who spoke when". These speaker 
+predictions are paired with the output of a speech recognition system (e.g. Whisper) to give speaker-labelled 
+transcriptions.
+
+The combined ASR + Diarization pipeline can be applied directly to long audio samples, such as meeting recordings, to 
+give fully annotated meeting transcriptions. 
+
+### Web Demo
+
+If you want to try out the ASR + Diarization pipeline, you can try out the following Space:
+
+[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/speechbox/whisper-speaker-diarization)
+
+### Example
+
+In order to use the ASR + Diarization pipeline, you need to install 🤗 [Transformers](https://github.com/huggingface/transformers) 
+and [PyAnnote Audio](https://github.com/pyannote/pyannote-audio):
+
+```
+pip install --upgrade transformers pyannote.audio
+```
+
+For this example, we will additionally make use of 🤗 [Datasets](https://github.com/huggingface/datasets) to load a sample audio file:
+
+```
+pip install --upgrade datasets
+```
+
+Now we stream a single audio sample, pass it to the ASR + Diarization pipeline, and return the speaker-segmented transcription:
+
+```python
+import torch
+from speechbox import ASRDiarizationPipeline
+from datasets import load_dataset
+
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
+pipeline = ASRDiarizationPipeline.from_pretrained("openai/whisper-tiny", device=device)
+
+# load dataset of concatenated LibriSpeech samples
+concatenated_librispeech = load_dataset("sanchit-gandhi/concatenated_librispeech", split="train", streaming=True)
+# get first sample
+sample = next(iter(concatenated_librispeech))
+
+out = pipeline(sample["audio"])
+print(out)
+```
