@@ -33,7 +33,7 @@ just hang out ☕.
 | Task | Description | Author |
 |-|-|-|
 | [Punctuation Restoration](#punctuation-restoration) | Punctuation restoration allows one to predict capitalized words as well as punctuation by using [Whisper](https://huggingface.co/models?other=whisper). | [Patrick von Platen](https://github.com/patrickvonplaten) |
-| [ASR With Speaker Diarization](#asr-with-speaker-diarization) | Transcribe long audio files, such as meeting recordings, with both speaker information (who spoke when) and the spoken text. | [Sanchit Gandhi](https://github.com/sanchit-gandhi) |
+| [ASR With Speaker Diarization](#asr-with-speaker-diarization) | Transcribe long audio files, such as meeting recordings, with speaker information (who spoke when) and the transcribed text. | [Sanchit Gandhi](https://github.com/sanchit-gandhi) |
 
 ## Punctuation Restoration
 
