@@ -163,7 +163,7 @@ extras = {}
 extras["quality"] = deps_list("black", "isort", "flake8")
 
 
-extras["dev"] = extras["quality"] + deps_list("transformers", "accelerate", "datasets")
+extras["dev"] = extras["quality"] + deps_list("transformers", "accelerate", "datasets", "torchaudio", "pyannote.audio")
 
 
 install_requires = [
