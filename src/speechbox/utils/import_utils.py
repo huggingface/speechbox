@@ -61,7 +61,7 @@ except importlib_metadata.PackageNotFoundError:
 _torchaudio_available = importlib.util.find_spec("torchaudio") is not None
 try:
     _ = importlib_metadata.version("torchaudio")
-    _torchaudio_metadata = importlib_metadata.metadata("orchaudio")
+    _torchaudio_metadata = importlib_metadata.metadata("torchaudio")
 except importlib_metadata.PackageNotFoundError:
     _torchaudio_available = False
 

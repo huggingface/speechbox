@@ -5,15 +5,15 @@ from ..utils import DummyObject, requires_backends
 
 
 class ASRDiarizationPipeline(metaclass=DummyObject):
-    _backends = ["transformers", "torchaudio", "pyannote"]
+    _backends = ["transformers", "torchaudio", "pyannote.audio"]
 
     def __init__(self, *args, **kwargs):
-        requires_backends(self, ["transformers", "torchaudio", "pyannote"])
+        requires_backends(self, ["transformers", "torchaudio", "pyannote.audio"])
 
     @classmethod
     def from_config(cls, *args, **kwargs):
-        requires_backends(cls, ["transformers", "torchaudio", "pyannote"])
+        requires_backends(cls, ["transformers", "torchaudio", "pyannote.audio"])
 
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
-        requires_backends(cls, ["transformers", "torchaudio", "pyannote"])
+        requires_backends(cls, ["transformers", "torchaudio", "pyannote.audio"])

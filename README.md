@@ -11,7 +11,7 @@
 
 # Installation
 
-**With `pip`** (official package)
+With `pip` (official package)
     
 ```bash
 pip install speechbox
