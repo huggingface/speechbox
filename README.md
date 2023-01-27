@@ -115,7 +115,7 @@ If you want to try out the ASR + Diarization pipeline, you can try out the follo
 ### Example
 
 In order to use the ASR + Diarization pipeline, you need to install 🤗 [Transformers](https://github.com/huggingface/transformers) 
-and [PyAnnote Audio](https://github.com/pyannote/pyannote-audio):
+and [pyannote.audio](https://github.com/pyannote/pyannote-audio):
 
 ```
 pip install --upgrade transformers pyannote.audio
