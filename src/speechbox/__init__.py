@@ -22,7 +22,7 @@
 # to defer the actual importing for when the objects are requested. This way `import transformers` provides the names
 # in the namespace without actually importing anything (and especially none of the backends).
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 
 from .utils import (is_accelerate_available, is_pyannote_available,
                     is_scipy_available, is_torchaudio_available,
