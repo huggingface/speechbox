@@ -25,6 +25,9 @@ class PunctuationRestorer:
         processor = WhisperProcessor.from_pretrained(pretrained_model_or_path)
         return cls(model, processor)
 
+    def set_language(self, language):
+        self.model.config.forced_decoder_ids = self.processor.get_decoder_prompt_ids(language=language, task='transcribe')
+
     def get_punctuation_tokens(self):
         punctuation_tokens = []
         for i in range(len(self.tokenizer)):
