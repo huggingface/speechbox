@@ -88,7 +88,7 @@ class ASRDiarizationPipeline:
         )
 
         segments = []
-        for segment, track, label in annotation.itertracks(yield_label=True):
+        for segment, track, label in diarization.itertracks(yield_label=True):
             segments.append({'segment': {'start': segment.start, 'end': segment.end},
                              'track': track,
                              'label': label})
