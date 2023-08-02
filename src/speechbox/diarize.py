@@ -87,7 +87,11 @@ class ASRDiarizationPipeline:
             **kwargs,
         )
 
-        segments = diarization.for_json()["content"]
+        segments = []
+        for segment, track, label in diarization.itertracks(yield_label=True):
+            segments.append({'segment': {'start': segment.start, 'end': segment.end},
+                             'track': track,
+                             'label': label})
 
         # diarizer output may contain consecutive segments from the same speaker (e.g. {(0 -> 1, speaker_1), (1 -> 1.5, speaker_1), ...})
         # we combine these segments to give overall timestamps for each speaker's turn (e.g. {(0 -> 1.5, speaker_1), ...})
