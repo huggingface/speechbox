@@ -34,7 +34,7 @@ class ASRDiarizationPipeline:
             "automatic-speech-recognition",
             model=asr_model,
             chunk_length_s=chunk_length_s,
-            use_auth_token=use_auth_token,
+            token=use_auth_token, # 08/25/2023: Changed argument from use_auth_token to token
             **kwargs,
         )
         diarization_pipeline = Pipeline.from_pretrained(diarizer_model, use_auth_token=use_auth_token)
@@ -72,7 +72,12 @@ class ASRDiarizationPipeline:
             group_by_speaker (`bool`):
                 Whether to group consecutive utterances by one speaker into a single segment. If False, will return
                 transcriptions on a chunk-by-chunk basis.
-
+            kwargs (remaining dictionary of keyword arguments, *optional*):
+                Can be used to update additional asr or diarization configuration parameters
+                        - To update the asr configuration, use the prefix *asr_* for each configuration parameter.
+                        - To update the diarization configuration, use the prefix *diarization_* for each configuration parameter.
+                        - Added this support related to issue #25: 08/25/2023
+                            
         Return:
             A list of transcriptions. Each list item corresponds to one chunk / segment of transcription, and is a
             dictionary with the following keys:
@@ -80,11 +85,19 @@ class ASRDiarizationPipeline:
                 - **speaker** (`str`) -- The associated speaker.
                 - **timestamps** (`tuple`) -- The start and end time for the chunk / segment.
         """
+        kwargs_asr = {
+            argument[len("asr_") :]: value for argument, value in kwargs.items() if argument.startswith("asr_")
+        }
+
+        kwargs_diarization = {
+            argument[len("diarization_") :]: value for argument, value in kwargs.items() if argument.startswith("diarization_")
+        }
+        
         inputs, diarizer_inputs = self.preprocess(inputs)
 
         diarization = self.diarization_pipeline(
             {"waveform": diarizer_inputs, "sample_rate": self.sampling_rate},
-            **kwargs,
+            **kwargs_diarization,
         )
 
         segments = []
@@ -123,7 +136,7 @@ class ASRDiarizationPipeline:
         asr_out = self.asr_pipeline(
             {"array": inputs, "sampling_rate": self.sampling_rate},
             return_timestamps=True,
-            **kwargs,
+            **kwargs_asr,
         )
         transcript = asr_out["chunks"]
 
