@@ -8,6 +8,8 @@ from torchaudio import functional as F
 from transformers import pipeline
 from transformers.pipelines.audio_utils import ffmpeg_read
 
+from .utils.diarize_utils import match_segments
+
 
 class ASRDiarizationPipeline:
     def __init__(
@@ -34,7 +36,7 @@ class ASRDiarizationPipeline:
             "automatic-speech-recognition",
             model=asr_model,
             chunk_length_s=chunk_length_s,
-            token=use_auth_token, # 08/25/2023: Changed argument from use_auth_token to token
+            token=use_auth_token,  # 08/25/2023: Changed argument from use_auth_token to token
             **kwargs,
         )
         diarization_pipeline = Pipeline.from_pretrained(diarizer_model, use_auth_token=use_auth_token)
@@ -43,18 +45,16 @@ class ASRDiarizationPipeline:
     def __call__(
         self,
         inputs: Union[np.ndarray, List[np.ndarray]],
-        group_by_speaker: bool = True,
+        iou_threshold: float = 0.0,
         **kwargs,
-    ):
+    ) -> list[dict]:
         """
         Transcribe the audio sequence(s) given as inputs to text and label with speaker information. The input audio
         is first passed to the speaker diarization pipeline, which returns timestamps for 'who spoke when'. The audio
         is then passed to the ASR pipeline, which returns utterance-level transcriptions and their corresponding
         timestamps. The speaker diarizer timestamps are aligned with the ASR transcription timestamps to give
-        speaker-labelled transcriptions. We cannot use the speaker diarization timestamps alone to partition the
-        transcriptions, as these timestamps may straddle across transcribed utterances from the ASR output. Thus, we
-        find the diarizer timestamps that are closest to the ASR timestamps and partition here.
-
+        speaker-labelled transcriptions. We perform a best intersection over union (IoU) to select the best match between
+        the speaker diarizer segment and the ASR transcription segment.
         Args:
             inputs (`np.ndarray` or `bytes` or `str` or `dict`):
                 The inputs is either :
@@ -69,30 +69,35 @@ class ASRDiarizationPipeline:
                       np.array}` with optionally a `"stride": (left: int, right: int)` than can ask the pipeline to
                       treat the first `left` samples and last `right` samples to be ignored in decoding (but used at
                       inference to provide more context to the model). Only use `stride` with CTC models.
-            group_by_speaker (`bool`):
-                Whether to group consecutive utterances by one speaker into a single segment. If False, will return
-                transcriptions on a chunk-by-chunk basis.
+            iou_threshold (float):
+                The threshold under which an IoU is considere too low.
             kwargs (remaining dictionary of keyword arguments, *optional*):
                 Can be used to update additional asr or diarization configuration parameters
                         - To update the asr configuration, use the prefix *asr_* for each configuration parameter.
                         - To update the diarization configuration, use the prefix *diarization_* for each configuration parameter.
                         - Added this support related to issue #25: 08/25/2023
-                            
+
         Return:
             A list of transcriptions. Each list item corresponds to one chunk / segment of transcription, and is a
             dictionary with the following keys:
                 - **text** (`str` ) -- The recognized text.
                 - **speaker** (`str`) -- The associated speaker.
                 - **timestamps** (`tuple`) -- The start and end time for the chunk / segment.
+
+        Note:
+            If no match occur between the speaker diarizer segment and the ASR transcription segment, a `NO_SPEAKER` label
+            will be assign as we can't infer properly the speaker of the segment.
         """
         kwargs_asr = {
             argument[len("asr_") :]: value for argument, value in kwargs.items() if argument.startswith("asr_")
         }
 
         kwargs_diarization = {
-            argument[len("diarization_") :]: value for argument, value in kwargs.items() if argument.startswith("diarization_")
+            argument[len("diarization_") :]: value
+            for argument, value in kwargs.items()
+            if argument.startswith("diarization_")
         }
-        
+
         inputs, diarizer_inputs = self.preprocess(inputs)
 
         diarization = self.diarization_pipeline(
@@ -100,72 +105,29 @@ class ASRDiarizationPipeline:
             **kwargs_diarization,
         )
 
-        segments = []
-        for segment, track, label in diarization.itertracks(yield_label=True):
-            segments.append({'segment': {'start': segment.start, 'end': segment.end},
-                             'track': track,
-                             'label': label})
+        dia_seg, dia_label = [], []
+        for segment, _, label in diarization.itertracks(yield_label=True):
+            dia_seg.append([segment.start, segment.end])
+            dia_label.append(label)
 
-        # diarizer output may contain consecutive segments from the same speaker (e.g. {(0 -> 1, speaker_1), (1 -> 1.5, speaker_1), ...})
-        # we combine these segments to give overall timestamps for each speaker's turn (e.g. {(0 -> 1.5, speaker_1), ...})
-        new_segments = []
-        prev_segment = cur_segment = segments[0]
-
-        for i in range(1, len(segments)):
-            cur_segment = segments[i]
-
-            # check if we have changed speaker ("label")
-            if cur_segment["label"] != prev_segment["label"] and i < len(segments):
-                # add the start/end times for the super-segment to the new list
-                new_segments.append(
-                    {
-                        "segment": {"start": prev_segment["segment"]["start"], "end": cur_segment["segment"]["start"]},
-                        "speaker": prev_segment["label"],
-                    }
-                )
-                prev_segment = segments[i]
-
-        # add the last segment(s) if there was no speaker change
-        new_segments.append(
-            {
-                "segment": {"start": prev_segment["segment"]["start"], "end": cur_segment["segment"]["end"]},
-                "speaker": prev_segment["label"],
-            }
-        )
+        assert (
+            dia_seg
+        ), "The result from the diarization pipeline: `diarization_segments` is empty. No segments found from the diarization process."
 
         asr_out = self.asr_pipeline(
             {"array": inputs, "sampling_rate": self.sampling_rate},
             return_timestamps=True,
             **kwargs_asr,
         )
-        transcript = asr_out["chunks"]
+        segmented_preds = asr_out["chunks"]
 
-        # get the end timestamps for each chunk from the ASR output
-        end_timestamps = np.array([chunk["timestamp"][-1] for chunk in transcript])
-        segmented_preds = []
+        dia_seg = np.array(dia_seg)
+        asr_seg = np.array([[*chunk["timestamp"]] for chunk in segmented_preds])
 
-        # align the diarizer timestamps and the ASR timestamps
-        for segment in new_segments:
-            # get the diarizer end timestamp
-            end_time = segment["segment"]["end"]
-            # find the ASR end timestamp that is closest to the diarizer's end timestamp and cut the transcript to here
-            upto_idx = np.argmin(np.abs(end_timestamps - end_time))
+        asr_labels = match_segments(dia_seg, dia_label, asr_seg, threshold=iou_threshold, no_match_label="NO_SPEAKER")
 
-            if group_by_speaker:
-                segmented_preds.append(
-                    {
-                        "speaker": segment["speaker"],
-                        "text": "".join([chunk["text"] for chunk in transcript[: upto_idx + 1]]),
-                        "timestamp": (transcript[0]["timestamp"][0], transcript[upto_idx]["timestamp"][1]),
-                    }
-                )
-            else:
-                for i in range(upto_idx + 1):
-                    segmented_preds.append({"speaker": segment["speaker"], **transcript[i]})
-
-            # crop the transcripts and timestamp lists according to the latest timestamp (for faster argmin)
-            transcript = transcript[upto_idx + 1 :]
-            end_timestamps = end_timestamps[upto_idx + 1 :]
+        for i, label in enumerate(asr_labels):
+            segmented_preds[i]["speaker"] = label
 
         return segmented_preds
 
