@@ -7,6 +7,8 @@
     </a>
 </p>
 
+🚨🚨 **Important:** This package is not actively maintained. If you are interested in maintaining this repo, please open an issue so that we can contact you 🚨🚨
+
 🤗 Speechbox offers a set of speech processing tools, such as punctuation restoration.
 
 # Installation
