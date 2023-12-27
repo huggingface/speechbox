@@ -11,9 +11,9 @@ from transformers.pipelines.audio_utils import ffmpeg_read
 
 class ASRDiarizationPipeline:
     def __init__(
-        self,
-        asr_pipeline,
-        diarization_pipeline,
+            self,
+            asr_pipeline,
+            diarization_pipeline,
     ):
         self.asr_pipeline = asr_pipeline
         self.sampling_rate = asr_pipeline.feature_extractor.sampling_rate
@@ -22,29 +22,29 @@ class ASRDiarizationPipeline:
 
     @classmethod
     def from_pretrained(
-        cls,
-        asr_model: Optional[str] = "openai/whisper-medium",
-        *,
-        diarizer_model: Optional[str] = "pyannote/speaker-diarization",
-        chunk_length_s: Optional[int] = 30,
-        use_auth_token: Optional[Union[str, bool]] = True,
-        **kwargs,
+            cls,
+            asr_model: Optional[str] = "openai/whisper-medium",
+            *,
+            diarizer_model: Optional[str] = "pyannote/speaker-diarization",
+            chunk_length_s: Optional[int] = 30,
+            use_auth_token: Optional[Union[str, bool]] = True,
+            **kwargs,
     ):
         asr_pipeline = pipeline(
             "automatic-speech-recognition",
             model=asr_model,
             chunk_length_s=chunk_length_s,
-            token=use_auth_token, # 08/25/2023: Changed argument from use_auth_token to token
+            token=use_auth_token,  # 08/25/2023: Changed argument from use_auth_token to token
             **kwargs,
         )
         diarization_pipeline = Pipeline.from_pretrained(diarizer_model, use_auth_token=use_auth_token)
         return cls(asr_pipeline, diarization_pipeline)
 
     def __call__(
-        self,
-        inputs: Union[np.ndarray, List[np.ndarray]],
-        group_by_speaker: bool = True,
-        **kwargs,
+            self,
+            inputs: Union[np.ndarray, List[np.ndarray]],
+            group_by_speaker: bool = True,
+            **kwargs,
     ):
         """
         Transcribe the audio sequence(s) given as inputs to text and label with speaker information. The input audio
@@ -77,7 +77,7 @@ class ASRDiarizationPipeline:
                         - To update the asr configuration, use the prefix *asr_* for each configuration parameter.
                         - To update the diarization configuration, use the prefix *diarization_* for each configuration parameter.
                         - Added this support related to issue #25: 08/25/2023
-                            
+
         Return:
             A list of transcriptions. Each list item corresponds to one chunk / segment of transcription, and is a
             dictionary with the following keys:
@@ -86,13 +86,14 @@ class ASRDiarizationPipeline:
                 - **timestamps** (`tuple`) -- The start and end time for the chunk / segment.
         """
         kwargs_asr = {
-            argument[len("asr_") :]: value for argument, value in kwargs.items() if argument.startswith("asr_")
+            argument[len("asr_"):]: value for argument, value in kwargs.items() if argument.startswith("asr_")
         }
 
         kwargs_diarization = {
-            argument[len("diarization_") :]: value for argument, value in kwargs.items() if argument.startswith("diarization_")
+            argument[len("diarization_"):]: value for argument, value in kwargs.items() if
+            argument.startswith("diarization_")
         }
-        
+
         inputs, diarizer_inputs = self.preprocess(inputs)
 
         diarization = self.diarization_pipeline(
@@ -141,31 +142,39 @@ class ASRDiarizationPipeline:
         transcript = asr_out["chunks"]
 
         # get the end timestamps for each chunk from the ASR output
+        total_duration = inputs.shape[0] / self.sampling_rate
+        if transcript[-1]["timestamp"][-1] is None:
+            transcript[-1]["timestamp"] = (transcript[-1]["timestamp"][0], total_duration)
+
         end_timestamps = np.array([chunk["timestamp"][-1] for chunk in transcript])
+
         segmented_preds = []
 
         # align the diarizer timestamps and the ASR timestamps
         for segment in new_segments:
             # get the diarizer end timestamp
             end_time = segment["segment"]["end"]
-            # find the ASR end timestamp that is closest to the diarizer's end timestamp and cut the transcript to here
-            upto_idx = np.argmin(np.abs(end_timestamps - end_time))
 
-            if group_by_speaker:
-                segmented_preds.append(
-                    {
-                        "speaker": segment["speaker"],
-                        "text": "".join([chunk["text"] for chunk in transcript[: upto_idx + 1]]),
-                        "timestamp": (transcript[0]["timestamp"][0], transcript[upto_idx]["timestamp"][1]),
-                    }
-                )
-            else:
-                for i in range(upto_idx + 1):
-                    segmented_preds.append({"speaker": segment["speaker"], **transcript[i]})
+            # find the ASR end timestamp that is closest to the diarizer's end timestamp
+            # only if the ending timestamp is not None
+            if transcript and transcript[0]["timestamp"][-1] is not None:
+                upto_idx = np.argmin(np.abs(end_timestamps - end_time))
 
-            # crop the transcripts and timestamp lists according to the latest timestamp (for faster argmin)
-            transcript = transcript[upto_idx + 1 :]
-            end_timestamps = end_timestamps[upto_idx + 1 :]
+                if group_by_speaker:
+                    segmented_preds.append(
+                        {
+                            "speaker": segment["speaker"],
+                            "text": "".join([chunk["text"] for chunk in transcript[:upto_idx + 1]]),
+                            "timestamp": (transcript[0]["timestamp"][0], transcript[upto_idx]["timestamp"][1]),
+                        }
+                    )
+                else:
+                    for i in range(upto_idx + 1):
+                        segmented_preds.append({"speaker": segment["speaker"], **transcript[i]})
+
+                # crop the transcripts and timestamp lists according to the latest timestamp (for faster argmin)
+                transcript = transcript[upto_idx + 1:]
+                end_timestamps = end_timestamps[upto_idx + 1:]
 
         return segmented_preds
 
