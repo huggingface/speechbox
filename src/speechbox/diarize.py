@@ -25,7 +25,7 @@ class ASRDiarizationPipeline:
         cls,
         asr_model: Optional[str] = "openai/whisper-medium",
         *,
-        diarizer_model: Optional[str] = "pyannote/speaker-diarization",
+        diarizer_model: Optional[str] = "pyannote/speaker-diarization-3.1",
         chunk_length_s: Optional[int] = 30,
         use_auth_token: Optional[Union[str, bool]] = True,
         **kwargs,
